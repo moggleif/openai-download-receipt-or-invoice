@@ -1,12 +1,9 @@
 import os
-import logging
-
-logger = logging.getLogger(__name__)
 
 class Config:
     REQUIRED_VARS = [
-        'OPENAI_EMAIL', 'OPENAI_PASSWORD',
-        'RECIPIENT_EMAIL', 'SMTP_HOST',
+        'OPENAI_HOME_URL',
+        'RECIPIENT_EMAIL', 'SMTP_HOST', 'SMTP_PORT',
         'SMTP_USER', 'SMTP_EMAIL', 'SMTP_PASSWORD'
     ]
 
@@ -15,17 +12,16 @@ class Config:
         if missing:
             raise EnvironmentError(f"Missing required env vars: {', '.join(missing)}")
 
-        self.openai_email    = os.getenv('OPENAI_EMAIL')
-        self.openai_password = os.getenv('OPENAI_PASSWORD')
-        self.remote_debugging_port  = os.getenv('OPENAI_REMOTE_DEBUG_PORT')
-        self.user_data_dir    = os.getenv('OPENAI_USER_DATA_DIR')
-        self.browser_executable_path  = os.getenv('OPENAI_BROWSER_EXE_PATH')
-        self.recipient       = os.getenv('RECIPIENT_EMAIL')
-        self.smtp_host       = os.getenv('SMTP_HOST')
-        self.smtp_port       = int(os.getenv('SMTP_PORT', '587'))
-        self.smtp_user       = os.getenv('SMTP_USER')
-        self.smtp_email       = os.getenv('SMTP_EMAIL')
-        self.smtp_password   = os.getenv('SMTP_PASSWORD')
+        # Required settings
+        self.openai_home_url       = os.getenv('OPENAI_HOME_URL')
+        self.recipient             = os.getenv('RECIPIENT_EMAIL')
+        self.smtp_host             = os.getenv('SMTP_HOST')
+        self.smtp_port             = int(os.getenv('SMTP_PORT'))
+        self.smtp_user             = os.getenv('SMTP_USER')
+        self.smtp_email            = os.getenv('SMTP_EMAIL')
+        self.smtp_password         = os.getenv('SMTP_PASSWORD')
 
-        if not os.path.isfile(self.browser_executable_path):
-            logger.error("Browser executable not found at %s", self.browser_executable_path)
+        # Optional settings
+        self.openai_email          = os.getenv('OPENAI_EMAIL', '')  # defaults to empty if unset
+        self.openai_password       = os.getenv('OPENAI_PASSWORD', '')  # defaults to empty if unset
+        self.remote_debugging_port = os.getenv('BROWSER_REMOTE_DEBUG_PORT', '9222')  # optional

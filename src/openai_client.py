@@ -12,7 +12,6 @@ class OpenAIClient:
     Fields are filled automatically; user manually clicks buttons.
     Verbose logging throughout.
     """
-    HOME_URL = "https://chatgpt.com"
     AUTH_URL_PATTERN = "**auth.openai.com/log-in**"
     SETTINGS_URL = "https://chatgpt.com/#settings/Account"
     MANAGE_BUTTON = "button:has-text('Manage')"
@@ -29,25 +28,6 @@ class OpenAIClient:
         self._context = None
         self._page = page
 
-    def start(self):
-        """
-        Starts Playwright and opens a browser context.
-        """
-        self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(
-            headless=False,
-            args=["--disable-blink-features=AutomationControlled"]
-        )
-        self._context = self._browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/114.0.0.0 Safari/537.36"
-            )
-        )
-        self._page = self._context.new_page()
-        logger.debug("Browser and context started")
-
     def login(self):
         """
         Assisted login flow:
@@ -63,10 +43,9 @@ class OpenAIClient:
 
         logger.info("Starting assisted login process")
         # Step 1: Go to home
-        self._page.goto(self.HOME_URL)
+        self._page.goto(self.cfg.openai_home_url)
         self._page.wait_for_load_state('networkidle')
         logger.debug("Page loaded, waiting for 'Log in' button")
-
 
         delay = random.uniform(1,5)
         logger.debug("Sleeping %.2f seconds before going to login page", delay)
@@ -103,7 +82,7 @@ class OpenAIClient:
         logger.debug("Manually filling MFA")
         
         # Confirm login success
-        self._page.wait_for_url(self.HOME_URL + '/*', timeout=120000)
+        self._page.wait_for_url(self.cfg.openai_home_url + '/*', timeout=120000)
         logger.info("Login successful, current page: %s", self._page.url)
 
     def download_latest_receipt(self, output_path: str):
@@ -139,20 +118,11 @@ class OpenAIClient:
         first_link = links[0]
         href = first_link.get_attribute('href')
         logger.debug("Clicking Stripe invoice link: %s", href)
-        # Load invoice page
 
+        # Load invoice page
         invoice_url = first_link.get_attribute("href")
         invoice_page = page  # we’re reusing the same tab
         invoice_page.goto(invoice_url)        
-        #with page.context.expect_page() as page_info:
-        #    first_link.click()
-        #invoice_page = page_info.value
-
-        #with page.expect_popup() as popup_info:
-#            first_link.click()
-
-
- #       invoice_page = popup_info.value
         logger.info("Wait for invoice page to load.")
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
@@ -165,17 +135,6 @@ class OpenAIClient:
         download.save_as(output_path)
         logger.info("Invoice saved to %s", output_path)
 
-
-    def close(self):
-        """
-        Closes the browser and stops Playwright.
-        """
-        if self._browser:
-            self._browser.close()
-        if self._pw:
-            self._pw.stop()
-        logger.debug("Browser and Playwright stopped")
-
     def is_logged_in(self) -> bool:
         """
         Returns True if we appear to be already logged in to ChatGPT.
@@ -183,12 +142,19 @@ class OpenAIClient:
         for the absence of a 'Log in' button (and presence of
         the chat sidebar).
         """
-        if not self._page:
-            self.start_or_connect()
-
         # Go to the ChatGPT home page
-        self._page.goto(self.HOME_URL)
+        self._page.goto(self.cfg.openai_home_url)
         self._page.wait_for_load_state("networkidle")
+        logger.info("Navigated page to %s", self.cfg.openai_home_url)
+
+        buttons = self._page.query_selector_all('button')
+        logger.debug("Found %d buttons on the page", len(buttons))
+        for idx, btn in enumerate(buttons):
+            try:
+                text = btn.inner_text().strip()
+            except Exception:
+                text = '<unable to retrieve text>'
+            logger.debug("Button %d: '%s'", idx, text)
 
         # If there's a login button visible, we're not logged in
         login_buttons = self._page.locator("button:has-text('Log in')")
@@ -201,78 +167,22 @@ class OpenAIClient:
             return False
 
         # Otherwise, check for something only visible when logged in,
-        # e.g. the chat list sidebar
-        sidebar = self._page.locator("nav[aria-label='Chat sidebar']")
+        sidebar = self._page.locator("button:has-text('sidebar')")
         if sidebar.count() > 0:
-            logger.debug("Detected chat sidebar – already logged in")
+            logger.debug("Detected buttons – already logged in")
             return True
 
-        # Fallback: no login button, no sidebar → treat as not logged in
-        return False
+        # Fallback: → treat as logged in
+        return True
 
     def ensure_logged_in(self):
         """
         Wrapper that only runs login() if we’re not already authenticated.
         """
-        if not self.is_logged_in():
+       
+        if self.is_logged_in():
+            logger.info("Already logged in; skipping login()")
+        else:
             logger.info("Not logged in; invoking login()")
             self.login()
-        else:
-            logger.info("Already logged in; skipping login()")
-
-    def start_or_connect(self):
-        """
-        Launch a Chromium-based browser. If self.cfg.user_data_dir is set,
-        reuse that profile via launch_persistent_context(); otherwise open
-        a fresh context. Uses self.cfg.browser_executable_path if provided.
-        Always opens a new page and navigates to HOME_URL.
-        """
-        # Read config values
-        profile = getattr(self.cfg, "user_data_dir", None)
-        exe = getattr(self.cfg, "browser_executable_path", None)
-        logger.debug(
-            "Configuration → user_data_dir=%s, browser_executable_path=%s",
-            profile, exe
-        )
-
-        # Start Playwright
-        logger.info("Starting Playwright engine")
-        self._pw = sync_playwright().start()
-
-        # Prepare launch args
-        launch_args = {"headless": False, "args": ["--disable-blink-features=AutomationControlled"]}
-        if exe:
-            launch_args["executable_path"] = exe
-            logger.debug("Added executable_path to launch_args: %s", exe)
-        logger.debug("Final launch_args: %r", launch_args)
-
-        # Launch browser (persistent or fresh)
-        if profile:
-            logger.info("Launching persistent context with profile: %s", profile)
-            self._context = self._pw.chromium.launch_persistent_context(
-                user_data_dir=profile,
-                **launch_args
-            )
-            self._browser = self._context.browser
-        else:
-            logger.info("Launching new browser instance")
-            self._browser = self._pw.chromium.launch(**launch_args)
-            self._context = self._browser.new_context()
-
-        # Log the Chromium version (property, not method)
-        logger.info("Browser launched; Chromium version=%s", self._browser.version)
-
-        # Always open a new page
-        logger.info("Creating a new page in the browser context")
-        self._page = self._context.new_page()
-        logger.info("New page created: %s", self._page)
-
-        # Navigate to home so you see something
-        logger.info("Navigating new page to %s", self.HOME_URL)
-        self._page.goto(self.HOME_URL)
-        self._page.wait_for_load_state("networkidle")
-        logger.info("Page loaded; browser should now be visible")
-
-        # Final diagnostics
-        logger.debug("After new_page(), context.pages count=%d", len(self._context.pages))
-        logger.info("start_or_connect complete – browser window is up and at HOME_URL")
+            

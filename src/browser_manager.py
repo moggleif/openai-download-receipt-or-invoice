@@ -9,10 +9,8 @@ class BrowserManager:
     and hands you its first live page.
     """
 
-    def __init__(self, cfg, home_url: str = "https://chatgpt.com"):
+    def __init__(self, cfg):
         self.port = int(cfg.remote_debugging_port)
-        self.home_url = home_url
-
         self._pw = None
         self.browser: Browser = None
         self.context: BrowserContext = None
@@ -38,11 +36,11 @@ class BrowserManager:
                 logger.info("Reusing existing page: %s", p.url)
                 break
         else:
-            logger.info("No open pages—creating one at %s", self.home_url)
+            logger.info("No open pages—creating one at %s", self.openai_home_url)
             self.page = self.context.new_page()
-            self.page.goto(self.home_url)
+            self.page.goto(cfg.openai_home_url)
             self.page.wait_for_load_state("networkidle")
-            logger.info("Navigated new page to %s", self.home_url)
+            logger.info("Navigated new page to %s", self.openai_home_url)
 
         # Remember where we started
         self._original_url = self.page.url
