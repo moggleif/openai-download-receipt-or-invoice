@@ -21,13 +21,13 @@ class OpenAIClient:
     STRIPE_URL_PATTERN = "https://invoice.stripe.com**"
     DOWNLOAD_BUTTON = "text=Download invoice"
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, page):
         self.cfg = cfg
         logger.debug("OpenAIClient initialized with cfg=%s", cfg)
         self._pw = None
         self._browser = None
         self._context = None
-        self._page = None
+        self._page = page
 
     def start(self):
         """
@@ -139,11 +139,20 @@ class OpenAIClient:
         first_link = links[0]
         href = first_link.get_attribute('href')
         logger.debug("Clicking Stripe invoice link: %s", href)
-        with page.expect_popup() as popup_info:
-            first_link.click()
-
         # Load invoice page
-        invoice_page = popup_info.value
+
+        invoice_url = first_link.get_attribute("href")
+        invoice_page = page  # we’re reusing the same tab
+        invoice_page.goto(invoice_url)        
+        #with page.context.expect_page() as page_info:
+        #    first_link.click()
+        #invoice_page = page_info.value
+
+        #with page.expect_popup() as popup_info:
+#            first_link.click()
+
+
+ #       invoice_page = popup_info.value
         logger.info("Wait for invoice page to load.")
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
@@ -166,3 +175,104 @@ class OpenAIClient:
         if self._pw:
             self._pw.stop()
         logger.debug("Browser and Playwright stopped")
+
+    def is_logged_in(self) -> bool:
+        """
+        Returns True if we appear to be already logged in to ChatGPT.
+        It does this by navigating to the home URL and looking
+        for the absence of a 'Log in' button (and presence of
+        the chat sidebar).
+        """
+        if not self._page:
+            self.start_or_connect()
+
+        # Go to the ChatGPT home page
+        self._page.goto(self.HOME_URL)
+        self._page.wait_for_load_state("networkidle")
+
+        # If there's a login button visible, we're not logged in
+        login_buttons = self._page.locator("button:has-text('Log in')")
+        try:
+            if login_buttons.count() > 0:
+                logger.debug("Detected 'Log in' button – not logged in yet")
+                return False
+        except Exception:
+            # any error finding the button, assume not logged in
+            return False
+
+        # Otherwise, check for something only visible when logged in,
+        # e.g. the chat list sidebar
+        sidebar = self._page.locator("nav[aria-label='Chat sidebar']")
+        if sidebar.count() > 0:
+            logger.debug("Detected chat sidebar – already logged in")
+            return True
+
+        # Fallback: no login button, no sidebar → treat as not logged in
+        return False
+
+    def ensure_logged_in(self):
+        """
+        Wrapper that only runs login() if we’re not already authenticated.
+        """
+        if not self.is_logged_in():
+            logger.info("Not logged in; invoking login()")
+            self.login()
+        else:
+            logger.info("Already logged in; skipping login()")
+
+    def start_or_connect(self):
+        """
+        Launch a Chromium-based browser. If self.cfg.user_data_dir is set,
+        reuse that profile via launch_persistent_context(); otherwise open
+        a fresh context. Uses self.cfg.browser_executable_path if provided.
+        Always opens a new page and navigates to HOME_URL.
+        """
+        # Read config values
+        profile = getattr(self.cfg, "user_data_dir", None)
+        exe = getattr(self.cfg, "browser_executable_path", None)
+        logger.debug(
+            "Configuration → user_data_dir=%s, browser_executable_path=%s",
+            profile, exe
+        )
+
+        # Start Playwright
+        logger.info("Starting Playwright engine")
+        self._pw = sync_playwright().start()
+
+        # Prepare launch args
+        launch_args = {"headless": False, "args": ["--disable-blink-features=AutomationControlled"]}
+        if exe:
+            launch_args["executable_path"] = exe
+            logger.debug("Added executable_path to launch_args: %s", exe)
+        logger.debug("Final launch_args: %r", launch_args)
+
+        # Launch browser (persistent or fresh)
+        if profile:
+            logger.info("Launching persistent context with profile: %s", profile)
+            self._context = self._pw.chromium.launch_persistent_context(
+                user_data_dir=profile,
+                **launch_args
+            )
+            self._browser = self._context.browser
+        else:
+            logger.info("Launching new browser instance")
+            self._browser = self._pw.chromium.launch(**launch_args)
+            self._context = self._browser.new_context()
+
+        # Log the Chromium version (property, not method)
+        logger.info("Browser launched; Chromium version=%s", self._browser.version)
+
+        # Always open a new page
+        logger.info("Creating a new page in the browser context")
+        self._page = self._context.new_page()
+        logger.info("New page created: %s", self._page)
+
+        # Navigate to home so you see something
+        logger.info("Navigating new page to %s", self.HOME_URL)
+        self._page.goto(self.HOME_URL)
+        self._page.wait_for_load_state("networkidle")
+        logger.info("Page loaded; browser should now be visible")
+
+        # Final diagnostics
+        logger.debug("After new_page(), context.pages count=%d", len(self._context.pages))
+        logger.info("start_or_connect complete – browser window is up and at HOME_URL")

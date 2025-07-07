@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from src.config import Config
 from src.openai_client import OpenAIClient
 from src.email_client import EmailClient
+from src.browser_manager import BrowserManager
 
 
 def main() -> None:
@@ -33,18 +34,18 @@ def main() -> None:
     pdf_path = f"openai_receipt_{date_str}.pdf"
     logger.debug("PDF path set to %s", pdf_path)
 
+    bm = BrowserManager(cfg, home_url="https://chatgpt.com")
+    page = bm.connect()    
+    
     # Download the latest receipt and send via email
-    ai_client = OpenAIClient(cfg)
-    ai_client.login()
-    ai_client.download_latest_receipt(pdf_path)
+    client = OpenAIClient(cfg,page)
+    client.download_latest_receipt(pdf_path)
     logger.debug("Receipt downloaded successfully")
+    bm.close()
 
     mail_client = EmailClient(cfg)
     mail_client.send(pdf_path)
     logger.debug("Receipt emailed successfully to %s", cfg.recipient)
-
-    logger.debug("Process completed.")
-
 
 if __name__ == '__main__':
     main()
