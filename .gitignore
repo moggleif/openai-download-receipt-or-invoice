@@ -8,5 +8,5 @@
 .env
 
 # Generated PDF receipts
-
+*.pdf
 \*.pdf
