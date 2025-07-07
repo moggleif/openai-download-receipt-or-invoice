@@ -61,7 +61,8 @@ class OpenAIClient:
         # Click the second 'Log in' button
         self._page.locator("button:has-text('Log in')").nth(1).click()
         
-        # Step 2: Fill email
+        # Step 2: Fill email 
+        self._page.wait_for_selector('input[type="email"]', timeout=60000)        
         logger.debug("Automatically filling email: %s", self.cfg.openai_email)
         self._page.fill('input[type="email"]', self.cfg.openai_email)
         delay = random.uniform(1,5)

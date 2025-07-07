@@ -35,7 +35,7 @@ def main() -> None:
     logger.debug("PDF path set to %s", pdf_path)
 
     browser = BrowserManager(cfg)
-    page = browser.connect()
+    page = browser.get_page()
     
     # Download the latest receipt and send via email
     client = OpenAIClient(cfg,page)
