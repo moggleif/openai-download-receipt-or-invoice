@@ -2,7 +2,7 @@ import logging
 import re
 import time
 import random
-import threading
+import urllib.request
 
 logger = logging.getLogger(__name__)
 
@@ -136,34 +136,26 @@ class OpenAIClient:
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
 
-        # Step 4: Intercept the PDF response and save it directly
-        # (expect_download doesn't work reliably over CDP with Vivaldi)
-        pdf_data = {}
-        pdf_ready = threading.Event()
+        # Step 4: Extract PDF URL from the download link and fetch via HTTP
+        # (expect_download and response listeners don't work over CDP with Vivaldi)
+        dl_link = invoice_page.locator("a:has-text('Download receipt')")
+        pdf_url = dl_link.get_attribute("href")
+        logger.debug("PDF download URL: %s", pdf_url)
 
-        def on_response(response):
-            content_type = response.headers.get("content-type", "")
-            if "application/pdf" in content_type:
-                logger.debug("Intercepted PDF response: %s (%s)", response.url, content_type)
-                try:
-                    pdf_data["body"] = response.body()
-                    pdf_ready.set()
-                except Exception as e:
-                    logger.warning("Failed to read PDF response body: %s", e)
+        if not pdf_url:
+            raise RuntimeError("Could not find PDF URL on invoice page")
 
-        page.on("response", on_response)
-        logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
-        invoice_page.click(self.DOWNLOAD_BUTTON)
+        # Stripe receipt PDFs are publicly accessible, no cookies needed
+        logger.info("Downloading PDF via HTTP...")
+        urllib.request.urlretrieve(pdf_url, output_path)
 
-        if not pdf_ready.wait(timeout=30):
-            page.remove_listener("response", on_response)
-            raise RuntimeError("Timed out waiting for PDF response")
+        # Verify the downloaded file is a valid PDF
+        with open(output_path, "rb") as f:
+            header = f.read(5)
+        if header != b"%PDF-":
+            raise RuntimeError(f"Downloaded file is not a valid PDF (header: {header!r})")
 
-        page.remove_listener("response", on_response)
-
-        with open(output_path, "wb") as f:
-            f.write(pdf_data["body"])
-        logger.info("Invoice saved to %s (%d bytes)", output_path, len(pdf_data["body"]))
+        logger.info("Invoice saved to %s", output_path)
 
     def is_logged_in(self) -> bool:
         """
