@@ -2,7 +2,6 @@ import logging
 import re
 import time
 import random
-from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
 
