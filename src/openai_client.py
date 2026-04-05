@@ -137,10 +137,22 @@ class OpenAIClient:
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
 
-        # Step 4: Extract PDF URL from the download link and fetch via HTTP
-        # (expect_download and response listeners don't work over CDP with Vivaldi)
-        dl_link = invoice_page.locator("a:has-text('Download receipt')")
-        pdf_url = dl_link.get_attribute("href")
+        # Step 4: Find the PDF download URL
+        # The "Download receipt" element may be a button or a link — inspect it
+        dl_el = invoice_page.locator(self.DOWNLOAD_BUTTON)
+        tag = dl_el.evaluate("el => el.tagName")
+        outer = dl_el.evaluate("el => el.outerHTML.substring(0, 500)")
+        logger.debug("Download element tag: %s, HTML: %s", tag, outer)
+
+        # Walk up to find the nearest <a> with an href
+        pdf_url = dl_el.evaluate("""el => {
+            let node = el;
+            while (node) {
+                if (node.tagName === 'A' && node.href) return node.href;
+                node = node.parentElement;
+            }
+            return null;
+        }""")
         logger.debug("PDF download URL: %s", pdf_url)
 
         if not pdf_url:
