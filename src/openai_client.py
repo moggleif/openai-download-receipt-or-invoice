@@ -137,29 +137,40 @@ class OpenAIClient:
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
 
-        # Step 4: Click "Download receipt" and intercept the PDF URL from network
-        # The button is a <span> that triggers JS — no href to extract.
-        # Listen for the request to files.stripe.com, then fetch it in-browser.
+        # Step 4: Click "Download receipt" and get the PDF
+        # The button is a <span> that triggers JS which calls
+        # invoicedata.stripe.com/invoice_receipt_file_url/... to get the
+        # actual PDF URL, then navigates to it. We intercept that API
+        # response to get the PDF URL, then fetch the PDF in-browser.
         pdf_url_holder = {}
         url_ready = threading.Event()
 
-        def on_request(request):
-            url = request.url
-            logger.debug("Network request: %s", url)
-            if "files.stripe.com" in url or url.endswith(".pdf"):
-                logger.info("Captured PDF request URL: %s", url)
-                pdf_url_holder["url"] = url
-                url_ready.set()
+        def on_response(response):
+            url = response.url
+            if "invoice_receipt_file_url" in url:
+                try:
+                    body = response.json()
+                    logger.debug("invoice_receipt_file_url response: %s", body)
+                    # The response should contain the PDF file URL
+                    file_url = body.get("file_url") or body.get("url")
+                    if file_url:
+                        logger.info("Got PDF file URL: %s", file_url)
+                        pdf_url_holder["url"] = file_url
+                        url_ready.set()
+                    else:
+                        logger.warning("No file URL in response: %s", body)
+                except Exception as e:
+                    logger.warning("Failed to parse receipt URL response: %s", e)
 
-        page.on("request", on_request)
+        page.on("response", on_response)
         logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
         invoice_page.click(self.DOWNLOAD_BUTTON)
 
         if not url_ready.wait(timeout=30):
-            page.remove_listener("request", on_request)
-            raise RuntimeError("Timed out waiting for PDF network request")
+            page.remove_listener("response", on_response)
+            raise RuntimeError("Timed out waiting for PDF URL from invoicedata.stripe.com")
 
-        page.remove_listener("request", on_request)
+        page.remove_listener("response", on_response)
         pdf_url = pdf_url_holder["url"]
 
         # Fetch the PDF inside the browser context (has cookies/session)
