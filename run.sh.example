@@ -3,7 +3,7 @@
 # run.sh is gitignored — your local settings stay private.
 
 # Start Vivaldi with remote debugging enabled
-vivaldi-stable --remote-debugging-port=9222 &
+snap run vivaldi.vivaldi-stable --remote-debugging-port=9222 &
 
 # Wait for browser to be ready
 sleep 3
