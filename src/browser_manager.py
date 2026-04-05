@@ -1,5 +1,5 @@
 import logging
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Error as PlaywrightError
+from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
 logger = logging.getLogger(__name__)
 
