@@ -2,8 +2,7 @@ import logging
 import re
 import time
 import random
-import urllib.request
-import http.cookiejar
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -158,32 +157,25 @@ class OpenAIClient:
         if not pdf_url:
             raise RuntimeError("Could not find PDF URL on invoice page")
 
-        # Fetch PDF with browser cookies (Stripe receipts require authentication)
-        logger.info("Downloading PDF via HTTP with browser cookies...")
-        cookies = page.context.cookies()
-        cookie_jar = http.cookiejar.CookieJar()
-        for c in cookies:
-            cookie_jar.set_cookie(http.cookiejar.Cookie(
-                version=0, name=c["name"], value=c["value"],
-                port=None, port_specified=False,
-                domain=c.get("domain", ""), domain_specified=bool(c.get("domain")),
-                domain_initial_dot=c.get("domain", "").startswith("."),
-                path=c.get("path", "/"), path_specified=bool(c.get("path")),
-                secure=c.get("secure", False), expires=int(c.get("expires", 0)),
-                discard=False, comment=None, comment_url=None, rest={},
-            ))
-        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
-        with opener.open(pdf_url) as resp:
-            with open(output_path, "wb") as f:
-                f.write(resp.read())
+        # Fetch PDF using fetch() inside the browser (has session/cookies)
+        logger.info("Fetching PDF via in-browser fetch(): %s", pdf_url)
+        pdf_b64 = invoice_page.evaluate("""async (url) => {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const buf = await resp.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            return btoa(binary);
+        }""", pdf_url)
 
-        # Verify the downloaded file is a valid PDF
-        with open(output_path, "rb") as f:
-            header = f.read(5)
-        if header != b"%PDF-":
-            raise RuntimeError(f"Downloaded file is not a valid PDF (header: {header!r})")
+        pdf_bytes = base64.b64decode(pdf_b64)
+        if not pdf_bytes[:5] == b"%PDF-":
+            raise RuntimeError(f"Downloaded file is not a valid PDF (header: {pdf_bytes[:20]!r})")
 
-        logger.info("Invoice saved to %s", output_path)
+        with open(output_path, "wb") as f:
+            f.write(pdf_bytes)
+        logger.info("Invoice saved to %s (%d bytes)", output_path, len(pdf_bytes))
 
     def is_logged_in(self) -> bool:
         """
