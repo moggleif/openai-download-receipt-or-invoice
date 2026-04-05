@@ -1,0 +1,12 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Environment variables file
+.env
+
+# Generated PDF receipts
+*.pdf
+
+# IDE
+.vscode/
