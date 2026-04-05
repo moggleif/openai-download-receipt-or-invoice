@@ -127,10 +127,15 @@ class OpenAIClient:
         href = first_link.get_attribute('href')
         logger.debug("Clicking Stripe invoice link: %s", href)
 
-        # Load invoice page
+        # Load invoice in a new context with downloads enabled
+        # (CDP-attached contexts don’t support accept_downloads, so we
+        #  open a fresh context just for the Stripe download)
         invoice_url = first_link.get_attribute("href")
-        invoice_page = page  # we’re reusing the same tab
-        invoice_page.goto(invoice_url)        
+        logger.debug("Opening invoice in new download context: %s", invoice_url)
+        browser = page.context.browser
+        dl_context = browser.new_context(accept_downloads=True)
+        invoice_page = dl_context.new_page()
+        invoice_page.goto(invoice_url)
         logger.info("Wait for invoice page to load.")
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
@@ -142,6 +147,7 @@ class OpenAIClient:
         download = download_info.value
         download.save_as(output_path)
         logger.info("Invoice saved to %s", output_path)
+        dl_context.close()
 
     def is_logged_in(self) -> bool:
         """
