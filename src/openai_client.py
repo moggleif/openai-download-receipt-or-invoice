@@ -143,6 +143,12 @@ class OpenAIClient:
         download.save_as(output_path)
         logger.info("Invoice saved to %s", output_path)
 
+        # Verify the downloaded file is a valid PDF
+        with open(output_path, "rb") as f:
+            header = f.read(5)
+        if header != b"%PDF-":
+            raise RuntimeError(f"Downloaded file is not a valid PDF (header: {header!r})")
+
     def is_logged_in(self) -> bool:
         """
         Returns True if we appear to be already logged in to ChatGPT.
