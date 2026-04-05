@@ -1,0 +1,13 @@
+#!/bin/bash
+# Copy this file to run.sh and adjust as needed.
+# run.sh is gitignored — your local settings stay private.
+
+# Start Vivaldi with remote debugging enabled
+vivaldi-stable --remote-debugging-port=9222 &
+
+# Wait for browser to be ready
+sleep 3
+
+# Run the receipt downloader
+source venv/bin/activate
+python send_receipt.py
