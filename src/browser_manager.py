@@ -16,6 +16,7 @@ class BrowserManager:
         self.browser: Browser = None
         self.context: BrowserContext = None
         self.page: Page = None
+        self._original_url = None
 
     def connect_over_cdp(self) -> Page:
         logger.info("Starting Playwright → attaching to port %d", self.port)
