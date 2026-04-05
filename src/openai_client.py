@@ -2,6 +2,7 @@ import logging
 import re
 import time
 import random
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -127,27 +128,41 @@ class OpenAIClient:
         href = first_link.get_attribute('href')
         logger.debug("Clicking Stripe invoice link: %s", href)
 
-        # Load invoice in a new context with downloads enabled
-        # (CDP-attached contexts don’t support accept_downloads, so we
-        #  open a fresh context just for the Stripe download)
+        # Navigate to the invoice page in the existing tab
         invoice_url = first_link.get_attribute("href")
-        logger.debug("Opening invoice in new download context: %s", invoice_url)
-        browser = page.context.browser
-        dl_context = browser.new_context(accept_downloads=True)
-        invoice_page = dl_context.new_page()
-        invoice_page.goto(invoice_url)
-        logger.info("Wait for invoice page to load.")
-        invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
-        logger.info("Invoice page loaded: %s", invoice_page.url)
+        logger.debug("Navigating to invoice page: %s", invoice_url)
+        page.goto(invoice_url)
+        page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
+        logger.info("Invoice page loaded: %s", page.url)
 
-        # Step 4: Click download and save
-        with invoice_page.expect_download() as download_info:
-            logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
-            invoice_page.click(self.DOWNLOAD_BUTTON)
-        download = download_info.value
-        download.save_as(output_path)
+        # Intercept the PDF response via route handler
+        pdf_data = {}
+        pdf_ready = threading.Event()
+
+        def intercept_pdf(route):
+            response = route.fetch()
+            pdf_data["body"] = response.body()
+            logger.info("Intercepted PDF response (%d bytes)", len(pdf_data["body"]))
+            pdf_ready.set()
+            route.abort()  # prevent browser download dialog
+
+        page.route("**/*.pdf", intercept_pdf)
+        page.route("**/files.stripe.com/**", intercept_pdf)
+
+        logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
+        page.click(self.DOWNLOAD_BUTTON)
+
+        # Wait for the intercepted PDF
+        pdf_ready.wait(timeout=60)
+        page.unroute("**/*.pdf")
+        page.unroute("**/files.stripe.com/**")
+
+        if "body" not in pdf_data:
+            raise RuntimeError("Failed to intercept PDF download")
+
+        with open(output_path, "wb") as f:
+            f.write(pdf_data["body"])
         logger.info("Invoice saved to %s", output_path)
-        dl_context.close()
 
     def is_logged_in(self) -> bool:
         """
