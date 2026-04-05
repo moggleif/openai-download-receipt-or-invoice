@@ -36,13 +36,15 @@ def main() -> None:
 
     browser = BrowserManager(cfg)
     page = browser.get_page()
-    
-    # Download the latest receipt and send via email
-    client = OpenAIClient(cfg,page)
-    client.ensure_logged_in()
-    client.download_latest_receipt(pdf_path)
-    logger.debug("Receipt downloaded successfully")
-    browser.close()
+
+    try:
+        # Download the latest receipt and send via email
+        client = OpenAIClient(cfg,page)
+        client.ensure_logged_in()
+        client.download_latest_receipt(pdf_path)
+        logger.debug("Receipt downloaded successfully")
+    finally:
+        browser.close()
 
     mail_client = EmailClient(cfg)
     mail_client.send(pdf_path)

@@ -2,6 +2,7 @@ import logging
 import re
 import time
 import random
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -135,19 +136,34 @@ class OpenAIClient:
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
 
-        # Step 4: Click download and save
-        with invoice_page.expect_download() as download_info:
-            logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
-            invoice_page.click(self.DOWNLOAD_BUTTON)
-        download = download_info.value
-        download.save_as(output_path)
-        logger.info("Invoice saved to %s", output_path)
+        # Step 4: Intercept the PDF response and save it directly
+        # (expect_download doesn't work reliably over CDP with Vivaldi)
+        pdf_data = {}
+        pdf_ready = threading.Event()
 
-        # Verify the downloaded file is a valid PDF
-        with open(output_path, "rb") as f:
-            header = f.read(5)
-        if header != b"%PDF-":
-            raise RuntimeError(f"Downloaded file is not a valid PDF (header: {header!r})")
+        def on_response(response):
+            content_type = response.headers.get("content-type", "")
+            if "application/pdf" in content_type:
+                logger.debug("Intercepted PDF response: %s (%s)", response.url, content_type)
+                try:
+                    pdf_data["body"] = response.body()
+                    pdf_ready.set()
+                except Exception as e:
+                    logger.warning("Failed to read PDF response body: %s", e)
+
+        page.on("response", on_response)
+        logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
+        invoice_page.click(self.DOWNLOAD_BUTTON)
+
+        if not pdf_ready.wait(timeout=30):
+            page.remove_listener("response", on_response)
+            raise RuntimeError("Timed out waiting for PDF response")
+
+        page.remove_listener("response", on_response)
+
+        with open(output_path, "wb") as f:
+            f.write(pdf_data["body"])
+        logger.info("Invoice saved to %s (%d bytes)", output_path, len(pdf_data["body"]))
 
     def is_logged_in(self) -> bool:
         """
