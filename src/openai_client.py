@@ -3,6 +3,7 @@ import re
 import time
 import random
 import urllib.request
+import http.cookiejar
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +146,24 @@ class OpenAIClient:
         if not pdf_url:
             raise RuntimeError("Could not find PDF URL on invoice page")
 
-        # Stripe receipt PDFs are publicly accessible, no cookies needed
-        logger.info("Downloading PDF via HTTP...")
-        urllib.request.urlretrieve(pdf_url, output_path)
+        # Fetch PDF with browser cookies (Stripe receipts require authentication)
+        logger.info("Downloading PDF via HTTP with browser cookies...")
+        cookies = page.context.cookies()
+        cookie_jar = http.cookiejar.CookieJar()
+        for c in cookies:
+            cookie_jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=c["name"], value=c["value"],
+                port=None, port_specified=False,
+                domain=c.get("domain", ""), domain_specified=bool(c.get("domain")),
+                domain_initial_dot=c.get("domain", "").startswith("."),
+                path=c.get("path", "/"), path_specified=bool(c.get("path")),
+                secure=c.get("secure", False), expires=int(c.get("expires", 0)),
+                discard=False, comment=None, comment_url=None, rest={},
+            ))
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+        with opener.open(pdf_url) as resp:
+            with open(output_path, "wb") as f:
+                f.write(resp.read())
 
         # Verify the downloaded file is a valid PDF
         with open(output_path, "rb") as f:
