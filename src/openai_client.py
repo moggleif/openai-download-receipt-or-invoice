@@ -3,6 +3,7 @@ import re
 import time
 import random
 import base64
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -136,28 +137,32 @@ class OpenAIClient:
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
 
-        # Step 4: Find the PDF download URL
-        # The "Download receipt" element may be a button or a link — inspect it
-        dl_el = invoice_page.locator(self.DOWNLOAD_BUTTON)
-        tag = dl_el.evaluate("el => el.tagName")
-        outer = dl_el.evaluate("el => el.outerHTML.substring(0, 500)")
-        logger.debug("Download element tag: %s, HTML: %s", tag, outer)
+        # Step 4: Click "Download receipt" and intercept the PDF URL from network
+        # The button is a <span> that triggers JS — no href to extract.
+        # Listen for the request to files.stripe.com, then fetch it in-browser.
+        pdf_url_holder = {}
+        url_ready = threading.Event()
 
-        # Walk up to find the nearest <a> with an href
-        pdf_url = dl_el.evaluate("""el => {
-            let node = el;
-            while (node) {
-                if (node.tagName === 'A' && node.href) return node.href;
-                node = node.parentElement;
-            }
-            return null;
-        }""")
-        logger.debug("PDF download URL: %s", pdf_url)
+        def on_request(request):
+            url = request.url
+            logger.debug("Network request: %s", url)
+            if "files.stripe.com" in url or url.endswith(".pdf"):
+                logger.info("Captured PDF request URL: %s", url)
+                pdf_url_holder["url"] = url
+                url_ready.set()
 
-        if not pdf_url:
-            raise RuntimeError("Could not find PDF URL on invoice page")
+        page.on("request", on_request)
+        logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
+        invoice_page.click(self.DOWNLOAD_BUTTON)
 
-        # Fetch PDF using fetch() inside the browser (has session/cookies)
+        if not url_ready.wait(timeout=30):
+            page.remove_listener("request", on_request)
+            raise RuntimeError("Timed out waiting for PDF network request")
+
+        page.remove_listener("request", on_request)
+        pdf_url = pdf_url_holder["url"]
+
+        # Fetch the PDF inside the browser context (has cookies/session)
         logger.info("Fetching PDF via in-browser fetch(): %s", pdf_url)
         pdf_b64 = invoice_page.evaluate("""async (url) => {
             const resp = await fetch(url);
