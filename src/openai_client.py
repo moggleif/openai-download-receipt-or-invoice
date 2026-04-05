@@ -2,8 +2,9 @@ import logging
 import re
 import time
 import random
-import base64
-import threading
+import glob
+import os
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -137,61 +138,41 @@ class OpenAIClient:
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
 
-        # Step 4: Click "Download receipt" and get the PDF
-        # The button is a <span> that triggers JS which calls
-        # invoicedata.stripe.com/invoice_receipt_file_url/... to get the
-        # actual PDF URL, then navigates to it. We intercept that API
-        # response to get the PDF URL, then fetch the PDF in-browser.
-        pdf_url_holder = {}
-        url_ready = threading.Event()
+        # Step 4: Click "Download receipt" and pick up the file from the
+        # browser's download folder. Playwright's expect_download doesn't
+        # work over CDP with Vivaldi, but the browser does download the
+        # file to its configured download directory.
+        download_dir = os.path.expanduser(self.cfg.download_dir)
+        pdfs_before = set(glob.glob(os.path.join(download_dir, "*.pdf")))
 
-        def on_response(response):
-            url = response.url
-            if "invoice_receipt_file_url" in url:
-                try:
-                    body = response.json()
-                    logger.debug("invoice_receipt_file_url response: %s", body)
-                    # The response should contain the PDF file URL
-                    file_url = body.get("file_url") or body.get("url")
-                    if file_url:
-                        logger.info("Got PDF file URL: %s", file_url)
-                        pdf_url_holder["url"] = file_url
-                        url_ready.set()
-                    else:
-                        logger.warning("No file URL in response: %s", body)
-                except Exception as e:
-                    logger.warning("Failed to parse receipt URL response: %s", e)
-
-        page.on("response", on_response)
         logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
         invoice_page.click(self.DOWNLOAD_BUTTON)
 
-        if not url_ready.wait(timeout=30):
-            page.remove_listener("response", on_response)
-            raise RuntimeError("Timed out waiting for PDF URL from invoicedata.stripe.com")
+        # Wait for a new PDF to appear in the download folder
+        logger.info("Waiting for PDF in %s...", download_dir)
+        new_pdf = None
+        for _ in range(60):  # up to 60 seconds
+            time.sleep(1)
+            pdfs_now = set(glob.glob(os.path.join(download_dir, "*.pdf")))
+            new_files = pdfs_now - pdfs_before
+            if new_files:
+                new_pdf = new_files.pop()
+                # Wait a moment for the file to finish writing
+                prev_size = -1
+                while True:
+                    curr_size = os.path.getsize(new_pdf)
+                    if curr_size == prev_size and curr_size > 0:
+                        break
+                    prev_size = curr_size
+                    time.sleep(0.5)
+                break
 
-        page.remove_listener("response", on_response)
-        pdf_url = pdf_url_holder["url"]
+        if not new_pdf:
+            raise RuntimeError(f"No new PDF appeared in {download_dir} after clicking download")
 
-        # Fetch the PDF inside the browser context (has cookies/session)
-        logger.info("Fetching PDF via in-browser fetch(): %s", pdf_url)
-        pdf_b64 = invoice_page.evaluate("""async (url) => {
-            const resp = await fetch(url);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const buf = await resp.arrayBuffer();
-            const bytes = new Uint8Array(buf);
-            let binary = '';
-            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-            return btoa(binary);
-        }""", pdf_url)
-
-        pdf_bytes = base64.b64decode(pdf_b64)
-        if not pdf_bytes[:5] == b"%PDF-":
-            raise RuntimeError(f"Downloaded file is not a valid PDF (header: {pdf_bytes[:20]!r})")
-
-        with open(output_path, "wb") as f:
-            f.write(pdf_bytes)
-        logger.info("Invoice saved to %s (%d bytes)", output_path, len(pdf_bytes))
+        logger.info("Found downloaded PDF: %s (%d bytes)", new_pdf, os.path.getsize(new_pdf))
+        shutil.move(new_pdf, output_path)
+        logger.info("Moved to %s", output_path)
 
     def is_logged_in(self) -> bool:
         """
