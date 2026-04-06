@@ -1,87 +1,96 @@
 # Automated OpenAI Receipt Emailer
 
-This repository contains a Python script that automatically logs into your OpenAI account, downloads the most recent receipt PDF, and emails it to a specified address. You can schedule the script to run monthly (or at any interval) to automate your billing workflow.
+Downloads the latest receipt PDF from your OpenAI account and emails it as an attachment. Connects to your existing browser session via CDP so you stay logged in — no need to store OpenAI credentials.
 
-## Features
+## How it works
 
-* Headless login to OpenAI via Playwright
-* Retrieval of the latest receipt PDF from your billing dashboard
-* SMTP email delivery of the receipt as a PDF attachment
-* Easy configuration via environment variables
-* MANUAL fill in One-time-password for MFA used by Open AI
+1. Attaches to your running browser (Vivaldi, Chrome, etc.) via Chrome DevTools Protocol
+2. Navigates to ChatGPT Settings > Billing > Manage
+3. Opens the latest Stripe invoice and downloads the receipt PDF
+4. Emails the PDF to configured recipients via SMTP
 
-## Prerequisites
+## Quick start
 
-* Python 3.7 or higher
-* [Playwright](https://playwright.dev/) for browser automation
-* Access to an SMTP server (e.g., Gmail, SendGrid, Mailgun)
+### Linux
 
-## Installation
+```bash
+chmod +x init.sh && ./init.sh
+```
 
-1. **Clone the repository**
+### Windows (PowerShell)
 
-   ```bash
-   git clone https://github.com/your-username/openai-receipt-mailer.git
-   cd openai-receipt-mailer
-   ```
+```powershell
+.\init.ps1
+```
 
-2. **Install Python dependencies**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Install Playwright browsers**
-
-   ```bash
-   playwright install
-   ```
+This creates a virtual environment, installs dependencies, and copies `.env.example` and `run.sh.example`/`run.ps1.example` for you to configure.
 
 ## Configuration
 
-Create a `.env` file in the project root (or export the following environment variables in your shell):
+Edit `.env` with your settings:
 
 ```ini
-# OpenAI login
-OPENAI_EMAIL=your_email@example.com
-OPENAI_PASSWORD=your_openai_password
-
-# Email delivery
+# Required
+OPENAI_HOME_URL=https://chatgpt.com
 RECIPIENT_EMAIL=destination@example.com
 SMTP_HOST=smtp.example.com
-SMTP_PORT=587
+SMTP_PORT=465
 SMTP_USER=smtp_username
+SMTP_EMAIL=sender@example.com
 SMTP_PASSWORD=smtp_password
-```
 
-> **Tip:** For Gmail, use an App Password and set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`.
+# Optional
+BROWSER_REMOTE_DEBUG_PORT=9222
+```
 
 ## Usage
 
-Run the script manually to test:
+Start your browser with remote debugging enabled, then run the script:
+
+### Linux (Vivaldi snap)
 
 ```bash
-python send_receipt.py
+snap run vivaldi.vivaldi-stable --remote-debugging-port=9222
 ```
 
-You have two minutes to fill in MFA and press enter. The rest, the script takes care of.
-Lots of logs, to see whats going on.
-The script takes some time to run, going to fast, Open AI believes your are running a script...
+### Windows (Vivaldi)
 
-## Security Considerations
+```powershell
+Start-Process "$env:LOCALAPPDATA\Vivaldi\Application\vivaldi.exe" "--remote-debugging-port=9222"
+```
 
-* Store your credentials securely (consider using a secrets manager).
-* Limit file permissions on the script and downloaded PDFs.
-* Use TLS (STARTTLS) for SMTP connections.
+### Other Chromium browsers
 
-## Contributing
+```bash
+google-chrome --remote-debugging-port=9222
+# or
+chromium --remote-debugging-port=9222
+```
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Commit your changes (`git commit -m 'Add my feature'`)
-4. Push to the branch (`git push origin feature/my-feature`)
-5. Open a Pull Request
+Make sure you're logged in to ChatGPT in the browser, then:
+
+```bash
+./run.sh        # Linux
+.\run.ps1       # Windows
+```
+
+The script attaches to your browser, downloads the receipt, emails it, and restores your browser tab to where it was.
+
+## Fallback login
+
+If no browser with remote debugging is available, the script launches a new Chromium instance and handles login automatically (fills email/password, you handle MFA). For this, add to `.env`:
+
+```ini
+OPENAI_EMAIL=your_email@example.com
+OPENAI_PASSWORD=your_openai_password
+```
+
+## Security
+
+- `.env` and `run.sh`/`run.ps1` are gitignored
+- Credentials are only in `.env`, never in code
+- The script restores your browser tab after running
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).
