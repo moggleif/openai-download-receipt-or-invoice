@@ -16,6 +16,12 @@ class OpenAIClient:
     INVOICE_LINK_SELECTOR = "a[href^='https://invoice.stripe.com/i/']"
     DOWNLOAD_BUTTON = "text=Download receipt"
 
+    LOGIN_BUTTON = "button:has-text('Log in')"
+    EMAIL_INPUT = 'input[type="email"]'
+    PASSWORD_INPUT = 'input[type="password"]'
+    SUBMIT_BUTTON = 'button[type="submit"]'
+    CONTINUE_BUTTON = "button:has-text('Continue')"
+
     def __init__(self, cfg, page):
         self.cfg = cfg
         self._page = page
@@ -68,19 +74,24 @@ class OpenAIClient:
     def _download_pdf(self, output_path: str):
         """Click the download button and save the PDF to output_path."""
         download_dir = os.path.abspath(os.path.dirname(output_path) or ".")
-        cdp_session = self._set_cdp_download_path(download_dir)
+        new_pdf = self._trigger_download(download_dir)
+        self._save_pdf(new_pdf, output_path)
 
+    def _trigger_download(self, download_dir: str) -> str:
+        """Start the download via CDP and wait for the PDF to appear."""
+        cdp_session = self._set_cdp_download_path(download_dir)
         pdfs_before = set(glob.glob(os.path.join(download_dir, "*.pdf")))
         self._page.click(self.DOWNLOAD_BUTTON)
         new_pdf = self._wait_for_new_pdf(download_dir, pdfs_before)
-
         cdp_session.detach()
-
         if not new_pdf:
             raise RuntimeError(f"No PDF appeared in {download_dir} after clicking download")
+        return new_pdf
 
-        if os.path.abspath(new_pdf) != os.path.abspath(output_path):
-            os.rename(new_pdf, output_path)
+    def _save_pdf(self, source: str, output_path: str):
+        """Rename the downloaded PDF to the desired output path."""
+        if os.path.abspath(source) != os.path.abspath(output_path):
+            os.rename(source, output_path)
         logger.info("Receipt saved to %s (%d bytes)", output_path, os.path.getsize(output_path))
 
     def _set_cdp_download_path(self, download_dir: str):
@@ -100,55 +111,62 @@ class OpenAIClient:
         page.wait_for_load_state("networkidle")
 
         self._human_delay()
-        page.locator("button:has-text('Log in')").nth(1).click()
+        page.locator(self.LOGIN_BUTTON).nth(1).click()
 
-        # Email
-        page.wait_for_selector('input[type="email"]', timeout=60000)
-        page.fill('input[type="email"]', self.cfg.openai_email)
-        self._human_delay()
-        page.click('button[type="submit"]')
-
-        # Password
-        page.wait_for_selector('input[type="password"]', timeout=60000)
-        page.fill('input[type="password"]', self.cfg.openai_password)
-        self._human_delay()
-        page.click("button:has-text('Continue')")
+        self._fill_field(self.EMAIL_INPUT, self.cfg.openai_email, self.SUBMIT_BUTTON)
+        self._fill_field(self.PASSWORD_INPUT, self.cfg.openai_password, self.CONTINUE_BUTTON)
 
         # Wait for MFA + redirect (up to 5 minutes)
         page.wait_for_url(self.cfg.openai_home_url + "/*", timeout=300000)
         logger.info("Login successful")
+
+    def _fill_field(self, selector: str, value: str, submit_selector: str):
+        """Wait for a form field, fill it, and click the submit button."""
+        self._page.wait_for_selector(selector, timeout=60000)
+        self._page.fill(selector, value)
+        self._human_delay()
+        self._page.click(submit_selector)
 
     def _is_logged_in(self) -> bool:
         page = self._page
         page.goto(self.cfg.openai_home_url)
         page.wait_for_load_state("networkidle")
 
-        login_buttons = page.locator("button:has-text('Log in')")
         try:
-            if login_buttons.count() > 0:
-                return False
+            return page.locator(self.LOGIN_BUTTON).count() == 0
         except Exception:
             return False
-        return True
 
     @staticmethod
     def _wait_for_new_pdf(directory, existing, timeout=60):
         """Poll for a new PDF file in *directory* that wasn't in *existing*."""
         for _ in range(timeout):
             time.sleep(1)
-            current = set(glob.glob(os.path.join(directory, "*.pdf")))
-            new_files = current - existing
-            if new_files:
-                path = new_files.pop()
-                # Wait for the file to finish writing
-                prev_size = -1
-                while True:
-                    size = os.path.getsize(path)
-                    if size == prev_size and size > 0:
-                        return path
-                    prev_size = size
-                    time.sleep(0.5)
+            new_file = OpenAIClient._find_new_pdf(directory, existing)
+            if new_file:
+                return new_file
         return None
+
+    @staticmethod
+    def _find_new_pdf(directory, existing):
+        """Return a fully written new PDF, or None if nothing yet."""
+        current = set(glob.glob(os.path.join(directory, "*.pdf")))
+        new_files = current - existing
+        if not new_files:
+            return None
+        path = new_files.pop()
+        return OpenAIClient._wait_until_written(path)
+
+    @staticmethod
+    def _wait_until_written(path):
+        """Block until the file size stabilizes."""
+        prev_size = -1
+        while True:
+            size = os.path.getsize(path)
+            if size == prev_size and size > 0:
+                return path
+            prev_size = size
+            time.sleep(0.5)
 
     @staticmethod
     def _human_delay():
