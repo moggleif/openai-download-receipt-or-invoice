@@ -143,8 +143,7 @@ class OpenAIClient:
         # download to a temp location but don't "complete" the download
         # without explicit setDownloadBehavior.
         download_dir = os.path.abspath(os.path.dirname(output_path) or '.')
-        cdp = page.context.browser
-        cdp_session = cdp.contexts[0].pages[0].context.new_cdp_session(page)
+        cdp_session = page.context.new_cdp_session(page)
         cdp_session.send("Browser.setDownloadBehavior", {
             "behavior": "allow",
             "downloadPath": download_dir,

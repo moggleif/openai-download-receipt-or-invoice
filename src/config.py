@@ -25,4 +25,3 @@ class Config:
         self.openai_email          = os.getenv('OPENAI_EMAIL', '')  # defaults to empty if unset
         self.openai_password       = os.getenv('OPENAI_PASSWORD', '')  # defaults to empty if unset
         self.remote_debugging_port = os.getenv('BROWSER_REMOTE_DEBUG_PORT', '9222')  # optional
-        self.download_dir          = os.getenv('DOWNLOAD_DIR', '~/Downloads')  # optional
