@@ -103,8 +103,6 @@ class BrowserManager:
             ),
         )
         self._page = self._context.new_page()
-        self._page.goto(self.cfg.openai_home_url)
-        self._page.wait_for_load_state("networkidle")
         return self._page
 
     def _close_browser(self):
