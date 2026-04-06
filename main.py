@@ -57,6 +57,8 @@ def email_receipt(cfg: Config, pdf_path: str) -> None:
 def main() -> None:
     args = parse_args()
     logger, cfg = configure_logging_and_config(verbose=args.verbose)
+    with open("openai_receipt.log", "a") as f:
+        f.write("\n" + "=" * 60 + "\n\n")
     pdf_path = todays_receipt_filename()
 
     download_latest_receipt(cfg, pdf_path)
