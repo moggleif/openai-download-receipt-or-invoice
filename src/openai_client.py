@@ -2,9 +2,8 @@ import logging
 import re
 import time
 import random
-import glob
 import os
-import shutil
+import glob
 
 logger = logging.getLogger(__name__)
 
@@ -138,26 +137,35 @@ class OpenAIClient:
         invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
         logger.info("Invoice page loaded: %s", invoice_page.url)
 
-        # Step 4: Click "Download receipt" and pick up the file from the
-        # browser's download folder. Playwright's expect_download doesn't
-        # work over CDP with Vivaldi, but the browser does download the
-        # file to its configured download directory.
-        download_dir = os.path.expanduser(self.cfg.download_dir)
+        # Step 4: Use CDP to set download behavior so the browser saves
+        # the file directly instead of leaving it in a temp cache.
+        # This is the root cause: over CDP, Chromium-based browsers
+        # download to a temp location but don't "complete" the download
+        # without explicit setDownloadBehavior.
+        download_dir = os.path.abspath(os.path.dirname(output_path) or '.')
+        cdp = page.context.browser
+        cdp_session = cdp.contexts[0].pages[0].context.new_cdp_session(page)
+        cdp_session.send("Browser.setDownloadBehavior", {
+            "behavior": "allow",
+            "downloadPath": download_dir,
+        })
+        logger.info("Set CDP download path to %s", download_dir)
+
         pdfs_before = set(glob.glob(os.path.join(download_dir, "*.pdf")))
 
         logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
         invoice_page.click(self.DOWNLOAD_BUTTON)
 
-        # Wait for a new PDF to appear in the download folder
-        logger.info("Waiting for PDF in %s...", download_dir)
+        # Wait for a new PDF to appear
+        logger.info("Waiting for PDF to download...")
         new_pdf = None
-        for _ in range(60):  # up to 60 seconds
+        for _ in range(60):
             time.sleep(1)
             pdfs_now = set(glob.glob(os.path.join(download_dir, "*.pdf")))
             new_files = pdfs_now - pdfs_before
             if new_files:
                 new_pdf = new_files.pop()
-                # Wait a moment for the file to finish writing
+                # Wait for file to finish writing
                 prev_size = -1
                 while True:
                     curr_size = os.path.getsize(new_pdf)
@@ -167,12 +175,15 @@ class OpenAIClient:
                     time.sleep(0.5)
                 break
 
-        if not new_pdf:
-            raise RuntimeError(f"No new PDF appeared in {download_dir} after clicking download")
+        cdp_session.detach()
 
-        logger.info("Found downloaded PDF: %s (%d bytes)", new_pdf, os.path.getsize(new_pdf))
-        shutil.move(new_pdf, output_path)
-        logger.info("Moved to %s", output_path)
+        if not new_pdf:
+            raise RuntimeError(f"No PDF appeared in {download_dir} after clicking download")
+
+        # Rename to desired output path
+        if new_pdf != output_path:
+            os.rename(new_pdf, output_path)
+        logger.info("Invoice saved to %s (%d bytes)", output_path, os.path.getsize(output_path))
 
     def is_logged_in(self) -> bool:
         """
