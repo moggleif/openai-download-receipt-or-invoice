@@ -83,7 +83,6 @@ class BrowserSession:
             try:
                 logger.info("Restoring tab to original page...")
                 self._page.goto(self._original_url)
-                self._page.wait_for_load_state("networkidle")
                 logger.info("Tab restored")
             except Exception as e:
                 logger.warning("Could not restore tab: %s", e)
