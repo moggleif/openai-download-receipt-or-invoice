@@ -29,9 +29,16 @@ class OpenAIClient:
 
     def download_latest_receipt(self, output_path: str):
         """Navigate to billing, open the latest invoice, and download the PDF."""
-        page = self._page
+        self._navigate_to_billing()
+        invoice_url = self._get_latest_invoice_url()
+        self._open_invoice(invoice_url)
+        self._download_pdf(output_path)
 
-        # Open settings and click the billing Manage button
+    # ── private ──────────────────────────────────────────────────
+
+    def _navigate_to_billing(self):
+        """Open settings and click the billing Manage button."""
+        page = self._page
         page.goto(self.SETTINGS_URL)
         page.wait_for_selector(self.MANAGE_BUTTON, timeout=60000)
 
@@ -42,19 +49,28 @@ class OpenAIClient:
             raise RuntimeError("No 'Manage' buttons found on settings page")
         manage_buttons.nth(count - 1).click()
 
-        # Wait for invoice links and open the first one
+    def _get_latest_invoice_url(self) -> str:
+        """Wait for invoice links and return the URL of the most recent one."""
+        page = self._page
         page.wait_for_selector(self.INVOICE_LINK_SELECTOR, timeout=60000)
         links = page.query_selector_all(self.INVOICE_LINK_SELECTOR)
         if not links:
             raise RuntimeError("No Stripe invoice links found")
+        url = links[0].get_attribute("href")
+        logger.info("Latest invoice: %s", url)
+        return url
 
-        invoice_url = links[0].get_attribute("href")
-        logger.info("Opening invoice: %s", invoice_url)
-        page.goto(invoice_url)
-        page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
+    def _open_invoice(self, invoice_url: str):
+        """Navigate to the Stripe invoice page."""
+        self._page.goto(invoice_url)
+        self._page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
+
+    def _download_pdf(self, output_path: str):
+        """Click the download button and save the PDF to output_path."""
+        page = self._page
+        download_dir = os.path.abspath(os.path.dirname(output_path) or ".")
 
         # Tell the browser where to save downloads (required for CDP on Linux)
-        download_dir = os.path.abspath(os.path.dirname(output_path) or ".")
         cdp_session = page.context.new_cdp_session(page)
         cdp_session.send("Browser.setDownloadBehavior", {
             "behavior": "allow",
@@ -62,7 +78,6 @@ class OpenAIClient:
         })
         logger.info("CDP download path: %s", download_dir)
 
-        # Click download and wait for the PDF to land on disk
         pdfs_before = set(glob.glob(os.path.join(download_dir, "*.pdf")))
         page.click(self.DOWNLOAD_BUTTON)
 
@@ -75,8 +90,6 @@ class OpenAIClient:
         if os.path.abspath(new_pdf) != os.path.abspath(output_path):
             os.rename(new_pdf, output_path)
         logger.info("Receipt saved to %s (%d bytes)", output_path, os.path.getsize(output_path))
-
-    # ── private ──────────────────────────────────────────────────
 
     def _login(self):
         """Assisted login: fills email/password, user handles MFA manually."""
