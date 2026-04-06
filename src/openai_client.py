@@ -114,7 +114,7 @@ class OpenAIClient:
         self._human_delay()
         page.click("button:has-text('Continue')")
 
-        # Wait for MFA + redirect (up to 2 minutes)
+        # Wait for MFA + redirect (up to 5 minutes)
         page.wait_for_url(self.cfg.openai_home_url + "/*", timeout=300000)
         logger.info("Login successful")
 
