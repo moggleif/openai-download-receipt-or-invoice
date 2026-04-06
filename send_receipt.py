@@ -23,16 +23,11 @@ def main() -> None:
     date_str = datetime.date.today().strftime("%Y-%m-%d")
     pdf_path = f"openai_receipt_{date_str}.pdf"
 
-    browser = BrowserManager(cfg)
-    page = browser.get_page()
-
-    try:
+    with BrowserManager(cfg) as page:
         client = OpenAIClient(cfg, page)
         client.ensure_logged_in()
         client.download_latest_receipt(pdf_path)
         logger.info("Receipt downloaded successfully")
-    finally:
-        browser.close()
 
     EmailClient(cfg).send(pdf_path)
     logger.info("Receipt emailed to %s", cfg.recipient)

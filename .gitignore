@@ -13,7 +13,7 @@ run.sh
 run.ps1
 
 # Virtual environment
-venv/
+.venv/
 
 # IDE
 .vscode/
