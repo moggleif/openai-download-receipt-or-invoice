@@ -8,8 +8,9 @@ __pycache__/
 # Generated PDF receipts
 *.pdf
 
-# Local run script (copy from run.sh.example)
+# Local run scripts (copy from *.example)
 run.sh
+run.ps1
 
 # Virtual environment
 venv/

@@ -1,0 +1,12 @@
+# Copy this file to run.ps1 and adjust as needed.
+# run.ps1 is gitignored -- your local settings stay private.
+
+# Start Vivaldi with remote debugging enabled
+Start-Process "$env:LOCALAPPDATA\Vivaldi\Application\vivaldi.exe" "--remote-debugging-port=9222"
+
+# Wait for browser to be ready
+Start-Sleep -Seconds 3
+
+# Run the receipt downloader
+& venv\Scripts\Activate.ps1
+python send_receipt.py
