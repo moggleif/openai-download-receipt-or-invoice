@@ -26,9 +26,9 @@ class ReceiptDownloader:
 
     def ensure_logged_in(self):
         if self._is_logged_in():
-            logger.info("Already logged in")
+            logger.info("Already logged in to ChatGPT")
         else:
-            logger.info("Not logged in — starting login flow")
+            logger.info("Not logged in — starting login (MFA may require manual input)")
             self._login()
 
     def download_latest_receipt(self, output_path: str):
@@ -48,7 +48,7 @@ class ReceiptDownloader:
 
         manage_buttons = page.locator(self.MANAGE_BUTTON)
         count = manage_buttons.count()
-        logger.info("Found %d 'Manage' button(s)", count)
+        logger.info("Settings page loaded, found %d billing section(s)", count)
         if count == 0:
             raise RuntimeError("No 'Manage' buttons found on settings page")
         manage_buttons.nth(count - 1).click()
@@ -61,7 +61,7 @@ class ReceiptDownloader:
         if not links:
             raise RuntimeError("No Stripe invoice links found")
         url = links[0].get_attribute("href")
-        logger.info("Latest invoice: %s", url)
+        logger.info("Found %d invoice(s), opening latest: %s", len(links), url)
         return url
 
     def _open_invoice(self, invoice_url: str):
@@ -90,7 +90,8 @@ class ReceiptDownloader:
         """Rename the downloaded PDF to the desired output path."""
         if os.path.abspath(source) != os.path.abspath(output_path):
             os.rename(source, output_path)
-        logger.info("Receipt saved to %s (%d bytes)", output_path, os.path.getsize(output_path))
+        size_kb = os.path.getsize(output_path) / 1024
+        logger.info("Saved receipt to %s (%.1f KB)", output_path, size_kb)
 
     def _set_cdp_download_path(self, download_dir: str):
         """Configure the browser to save downloads to download_dir via CDP."""
@@ -99,7 +100,7 @@ class ReceiptDownloader:
             "behavior": "allow",
             "downloadPath": download_dir,
         })
-        logger.info("CDP download path: %s", download_dir)
+        logger.debug("CDP download path set to %s", download_dir)
         return cdp_session
 
     def _login(self):
@@ -116,7 +117,7 @@ class ReceiptDownloader:
 
         # Wait for MFA + redirect (up to 5 minutes)
         page.wait_for_url(self.cfg.openai_home_url + "/*", timeout=300000)
-        logger.info("Login successful")
+        logger.info("Login complete")
 
     def _fill_field(self, selector: str, value: str, submit_selector: str):
         """Wait for a form field, fill it, and click the submit button."""

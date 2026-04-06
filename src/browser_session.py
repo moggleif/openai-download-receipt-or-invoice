@@ -44,7 +44,7 @@ class BrowserSession:
     # ── private ──────────────────────────────────────────────────
 
     def _connect_cdp(self) -> Page | None:
-        logger.info("Connecting to browser on port %d via CDP...", self.port)
+        logger.info("Attempting CDP connection on port %d", self.port)
         self._pw = sync_playwright().start()
 
         if not self._attach_to_browser():
@@ -57,10 +57,10 @@ class BrowserSession:
         try:
             self._browser = self._pw.chromium.connect_over_cdp(f"http://localhost:{self.port}")
         except PlaywrightError:
-            logger.warning("CDP connection failed — will launch a new browser")
+            logger.warning("No browser found on port %d — will launch a new one", self.port)
             return False
 
-        logger.info("Attached to browser (version=%s)", self._browser.version)
+        logger.info("Connected to running browser (Chrome %s)", self._browser.version)
 
         if not self._browser.contexts:
             raise RuntimeError("No browser contexts available")
@@ -76,20 +76,20 @@ class BrowserSession:
             self._page = self._context.new_page()
 
         self._original_url = self._page.url
-        logger.info("Using page at %s", self._original_url)
+        logger.info("Using existing tab: %s", self._original_url)
 
     def _close_cdp(self):
         if self._page and self._original_url:
             try:
-                logger.info("Restoring original page: %s", self._original_url)
+                logger.info("Restoring tab to %s", self._original_url)
                 self._page.goto(self._original_url)
                 self._page.wait_for_load_state("networkidle")
             except Exception as e:
-                logger.warning("Could not restore original URL: %s", e)
+                logger.warning("Could not restore tab: %s", e)
         self._stop_playwright()
 
     def _launch_browser(self) -> Page:
-        logger.info("Launching new browser...")
+        logger.info("Launching a new Chrome window")
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(
             headless=False,

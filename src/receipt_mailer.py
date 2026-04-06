@@ -44,10 +44,10 @@ class ReceiptMailer:
     def _connect(self) -> smtplib.SMTP:
         host, port = self.cfg.smtp_host, self.cfg.smtp_port
         if port == 465:
-            logger.info("Connecting to %s:%s over SSL", host, port)
+            logger.info("Connecting to SMTP server %s:%s (SSL)", host, port)
             server = smtplib.SMTP_SSL(host, port)
         else:
-            logger.info("Connecting to %s:%s with STARTTLS", host, port)
+            logger.info("Connecting to SMTP server %s:%s (STARTTLS)", host, port)
             server = smtplib.SMTP(host, port)
             server.ehlo()
             server.starttls()
@@ -58,7 +58,7 @@ class ReceiptMailer:
         server = self._connect()
         server.send_message(msg)
         server.quit()
-        logger.info("Email sent to %s", self.cfg.recipient)
+        logger.info("Email with receipt sent to %s", self.cfg.recipient)
 
     def _cleanup(self, pdf_path: str) -> None:
         try:

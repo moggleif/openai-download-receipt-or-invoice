@@ -40,10 +40,10 @@ def main() -> None:
     pdf_path = todays_receipt_filename()
 
     download_latest_receipt(cfg, pdf_path)
-    logger.info("Receipt downloaded successfully")
+    logger.info("Receipt downloaded to %s", pdf_path)
 
     email_receipt(cfg, pdf_path)
-    logger.info("Receipt emailed to %s", cfg.recipient)
+    logger.info("Receipt emailed to %s — all done", cfg.recipient)
 
 
 if __name__ == "__main__":
