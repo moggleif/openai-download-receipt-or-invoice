@@ -8,6 +8,9 @@ __pycache__/
 # Generated PDF receipts
 *.pdf
 
+# Log file
+*.log
+
 # Local run scripts (copy from *.example)
 run.sh
 run.ps1

@@ -15,6 +15,7 @@ class ReceiptMailer:
     # ── public API ───────────────────────────────────────────────
 
     def send(self, pdf_path: str) -> None:
+        logger.info("Preparing email with %s...", os.path.basename(pdf_path))
         msg = self._build_message(pdf_path)
         try:
             self._smtp_send(msg)

@@ -43,6 +43,7 @@ class ReceiptDownloader:
     def _navigate_to_billing(self):
         """Open settings and click the billing Manage button."""
         page = self._page
+        logger.info("Opening ChatGPT settings...")
         page.goto(self.SETTINGS_URL)
         page.wait_for_selector(self.MANAGE_BUTTON, timeout=60000)
 
@@ -56,6 +57,7 @@ class ReceiptDownloader:
     def _get_latest_invoice_url(self) -> str:
         """Wait for invoice links and return the URL of the most recent one."""
         page = self._page
+        logger.info("Waiting for invoice list to load...")
         page.wait_for_selector(self.INVOICE_LINK_SELECTOR, timeout=60000)
         links = page.query_selector_all(self.INVOICE_LINK_SELECTOR)
         if not links:
@@ -66,6 +68,7 @@ class ReceiptDownloader:
 
     def _open_invoice(self, invoice_url: str):
         """Navigate to the Stripe invoice page."""
+        logger.info("Opening Stripe invoice page...")
         self._page.goto(invoice_url)
         self._page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
 
@@ -79,6 +82,7 @@ class ReceiptDownloader:
         """Start the download via CDP and wait for the PDF to appear."""
         cdp_session = self._set_cdp_download_path(download_dir)
         pdfs_before = set(glob.glob(os.path.join(download_dir, "*.pdf")))
+        logger.info("Downloading receipt PDF...")
         self._page.click(self.DOWNLOAD_BUTTON)
         new_pdf = self._wait_for_new_pdf(download_dir, pdfs_before)
         cdp_session.detach()
@@ -128,6 +132,7 @@ class ReceiptDownloader:
 
     def _is_logged_in(self) -> bool:
         page = self._page
+        logger.info("Checking login status...")
         page.goto(self.cfg.openai_home_url)
         page.wait_for_load_state("networkidle")
 
