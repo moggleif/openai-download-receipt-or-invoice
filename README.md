@@ -72,6 +72,29 @@ google-chrome --remote-debugging-port=9222
 chromium --remote-debugging-port=9222
 ```
 
+## Scheduled monthly run (Linux)
+
+Run the installer to set up a systemd user timer that downloads the receipt on the 4th of every month at 10:00. If the computer is off on the 4th, it runs automatically at the next boot.
+
+```bash
+./install-schedule.sh
+```
+
+Check status and next run time:
+
+```bash
+systemctl --user status openai-receipt.timer
+systemctl --user list-timers
+```
+
+To uninstall:
+
+```bash
+systemctl --user disable --now openai-receipt.timer
+rm ~/.config/systemd/user/openai-receipt.{service,timer}
+systemctl --user daemon-reload
+```
+
 ## Fallback login
 
 If no browser with remote debugging is available, the script launches a temporary Chromium instance and handles login automatically (fills email/password, you handle MFA within 5 minutes). For this, add to `.env`:
