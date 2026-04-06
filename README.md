@@ -1,4 +1,4 @@
-# Automated OpenAI Receipt Emailer
+# OpenAI Receipt Downloader
 
 Downloads the latest receipt PDF from your OpenAI account and emails it as an attachment. Connects to your existing browser session via CDP so you stay logged in — no need to store OpenAI credentials.
 

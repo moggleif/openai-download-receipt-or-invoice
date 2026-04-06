@@ -6,7 +6,7 @@ from email.message import EmailMessage
 logger = logging.getLogger(__name__)
 
 
-class EmailClient:
+class ReceiptMailer:
     """Sends an email with the receipt PDF attached, then deletes the file."""
 
     def __init__(self, cfg):

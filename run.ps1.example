@@ -13,7 +13,7 @@ try {
 
 # Run the receipt downloader
 & venv\Scripts\Activate.ps1
-python send_receipt.py
+python main.py
 
 # Close browser if we started it
 if ($startedBrowser) {

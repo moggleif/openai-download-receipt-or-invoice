@@ -1,13 +1,13 @@
 #!/usr/bin/env python
-"""Automated OpenAI Receipt Mailer — downloads the latest receipt and emails it."""
+"""Downloads the latest OpenAI receipt and emails it."""
 import logging
 import datetime
 
 from dotenv import load_dotenv
 from src.config import Config
-from src.openai_client import OpenAIClient
-from src.email_client import EmailClient
-from src.browser_manager import BrowserManager
+from src.receipt_downloader import ReceiptDownloader
+from src.receipt_mailer import ReceiptMailer
+from src.browser_session import BrowserSession
 
 
 def configure_logging_and_config() -> tuple[logging.Logger, Config]:
@@ -25,14 +25,14 @@ def todays_receipt_filename() -> str:
 
 
 def download_latest_receipt(cfg: Config, pdf_path: str) -> None:
-    with BrowserManager(cfg) as page:
-        client = OpenAIClient(cfg, page)
-        client.ensure_logged_in()
-        client.download_latest_receipt(pdf_path)
+    with BrowserSession(cfg) as page:
+        downloader = ReceiptDownloader(cfg, page)
+        downloader.ensure_logged_in()
+        downloader.download_latest_receipt(pdf_path)
 
 
 def email_receipt(cfg: Config, pdf_path: str) -> None:
-    EmailClient(cfg).send(pdf_path)
+    ReceiptMailer(cfg).send(pdf_path)
 
 
 def main() -> None:

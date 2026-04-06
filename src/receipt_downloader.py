@@ -7,10 +7,8 @@ import random
 logger = logging.getLogger(__name__)
 
 
-class OpenAIClient:
-    """
-    Handles login to ChatGPT and downloading the latest receipt PDF.
-    """
+class ReceiptDownloader:
+    """Logs in to ChatGPT and downloads the latest receipt PDF."""
     SETTINGS_URL = "https://chatgpt.com/#settings/Account"
     MANAGE_BUTTON = "button:has-text('Manage')"
     INVOICE_LINK_SELECTOR = "a[href^='https://invoice.stripe.com/i/']"
@@ -142,7 +140,7 @@ class OpenAIClient:
         """Poll for a new PDF file in *directory* that wasn't in *existing*."""
         for _ in range(timeout):
             time.sleep(1)
-            new_file = OpenAIClient._find_new_pdf(directory, existing)
+            new_file = ReceiptDownloader._find_new_pdf(directory, existing)
             if new_file:
                 return new_file
         return None
@@ -155,7 +153,7 @@ class OpenAIClient:
         if not new_files:
             return None
         path = new_files.pop()
-        return OpenAIClient._wait_until_written(path)
+        return ReceiptDownloader._wait_until_written(path)
 
     @staticmethod
     def _wait_until_written(path):

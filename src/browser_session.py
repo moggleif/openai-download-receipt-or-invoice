@@ -6,7 +6,7 @@ from playwright.sync_api import (
 
 logger = logging.getLogger(__name__)
 
-class BrowserManager:
+class BrowserSession:
     """
     Connects to an existing browser via CDP (--remote-debugging-port)
     or launches a new one as fallback.
