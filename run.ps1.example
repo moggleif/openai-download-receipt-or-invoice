@@ -1,12 +1,21 @@
 # Copy this file to run.ps1 and adjust as needed.
 # run.ps1 is gitignored -- your local settings stay private.
 
-# Start Vivaldi with remote debugging enabled
-Start-Process "$env:LOCALAPPDATA\Vivaldi\Application\vivaldi.exe" "--remote-debugging-port=9222"
-
-# Wait for browser to be ready
-Start-Sleep -Seconds 3
+# Start Vivaldi with remote debugging only if not already running
+$startedBrowser = $false
+try {
+    Invoke-RestMethod -Uri "http://localhost:9222/json/version" -ErrorAction Stop | Out-Null
+} catch {
+    $browser = Start-Process "$env:LOCALAPPDATA\Vivaldi\Application\vivaldi.exe" "--remote-debugging-port=9222" -PassThru
+    $startedBrowser = $true
+    Start-Sleep -Seconds 3
+}
 
 # Run the receipt downloader
 & venv\Scripts\Activate.ps1
 python send_receipt.py
+
+# Close browser if we started it
+if ($startedBrowser) {
+    Stop-Process -Id $browser.Id -ErrorAction SilentlyContinue
+}

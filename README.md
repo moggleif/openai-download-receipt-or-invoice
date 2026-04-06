@@ -47,38 +47,34 @@ BROWSER_REMOTE_DEBUG_PORT=9222
 
 Start your browser with remote debugging enabled, then run the script:
 
-### Linux (Vivaldi snap)
-
-```bash
-snap run vivaldi.vivaldi-stable --remote-debugging-port=9222
-```
-
-### Windows (Vivaldi)
-
-```powershell
-Start-Process "$env:LOCALAPPDATA\Vivaldi\Application\vivaldi.exe" "--remote-debugging-port=9222"
-```
-
-### Other Chromium browsers
-
-```bash
-google-chrome --remote-debugging-port=9222
-# or
-chromium --remote-debugging-port=9222
-```
-
-Make sure you're logged in to ChatGPT in the browser, then:
-
 ```bash
 ./run.sh        # Linux
 .\run.ps1       # Windows
 ```
 
-The script attaches to your browser, downloads the receipt, emails it, and restores your browser tab to where it was.
+The run scripts automatically detect if a browser with remote debugging is already running. If not, they start one and close it when done. If a browser is already running, it's reused and left open.
+
+Make sure you're logged in to ChatGPT in the browser. The script attaches to it, downloads the receipt, emails it, and restores your browser tab to where it was.
+
+### Starting the browser manually
+
+If you prefer to manage the browser yourself:
+
+```bash
+# Linux (Vivaldi snap)
+snap run vivaldi.vivaldi-stable --remote-debugging-port=9222
+
+# Windows (Vivaldi)
+Start-Process "$env:LOCALAPPDATA\Vivaldi\Application\vivaldi.exe" "--remote-debugging-port=9222"
+
+# Other Chromium browsers
+google-chrome --remote-debugging-port=9222
+chromium --remote-debugging-port=9222
+```
 
 ## Fallback login
 
-If no browser with remote debugging is available, the script launches a new Chromium instance and handles login automatically (fills email/password, you handle MFA within 5 minutes). For this, add to `.env`:
+If no browser with remote debugging is available, the script launches a temporary Chromium instance and handles login automatically (fills email/password, you handle MFA within 5 minutes). For this, add to `.env`:
 
 ```ini
 OPENAI_EMAIL=your_email@example.com

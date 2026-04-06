@@ -2,12 +2,20 @@
 # Copy this file to run.sh and adjust as needed.
 # run.sh is gitignored — your local settings stay private.
 
-# Start Vivaldi with remote debugging enabled
-snap run vivaldi.vivaldi-stable --remote-debugging-port=9222 &
-
-# Wait for browser to be ready
-sleep 3
+# Start Vivaldi with remote debugging only if not already running
+STARTED_BROWSER=false
+if ! curl -s http://localhost:9222/json/version > /dev/null 2>&1; then
+    snap run vivaldi.vivaldi-stable --remote-debugging-port=9222 &
+    BROWSER_PID=$!
+    STARTED_BROWSER=true
+    sleep 3
+fi
 
 # Run the receipt downloader
 source venv/bin/activate
 python send_receipt.py
+
+# Close browser if we started it
+if [ "$STARTED_BROWSER" = true ]; then
+    kill "$BROWSER_PID" 2>/dev/null
+fi
