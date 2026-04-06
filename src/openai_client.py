@@ -100,7 +100,7 @@ class OpenAIClient:
         page.click("button:has-text('Continue')")
 
         # Wait for MFA + redirect (up to 2 minutes)
-        page.wait_for_url(self.cfg.openai_home_url + "/*", timeout=120000)
+        page.wait_for_url(self.cfg.openai_home_url + "/*", timeout=300000)
         logger.info("Login successful")
 
     def _is_logged_in(self) -> bool:

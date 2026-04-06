@@ -78,7 +78,7 @@ The script attaches to your browser, downloads the receipt, emails it, and resto
 
 ## Fallback login
 
-If no browser with remote debugging is available, the script launches a new Chromium instance and handles login automatically (fills email/password, you handle MFA). For this, add to `.env`:
+If no browser with remote debugging is available, the script launches a new Chromium instance and handles login automatically (fills email/password, you handle MFA within 5 minutes). For this, add to `.env`:
 
 ```ini
 OPENAI_EMAIL=your_email@example.com
