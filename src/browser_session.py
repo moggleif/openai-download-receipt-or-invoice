@@ -71,15 +71,15 @@ class BrowserSession:
         for p in self._context.pages:
             if not p.is_closed():
                 self._page = p
+                self._original_url = self._page.url
+                logger.info("Using existing tab: %s", self._original_url)
                 break
         else:
             self._page = self._context.new_page()
-
-        self._original_url = self._page.url
-        logger.info("Using existing tab: %s", self._original_url)
+            logger.info("Created new tab (no existing tabs found)")
 
     def _close_cdp(self):
-        if self._page and self._original_url:
+        if self._page and self._should_restore():
             try:
                 logger.info("Restoring tab to original page...")
                 self._page.goto(self._original_url)
@@ -110,6 +110,11 @@ class BrowserSession:
         if self._browser:
             self._browser.close()
         self._stop_playwright()
+
+    def _should_restore(self) -> bool:
+        if not self._original_url:
+            return False
+        return not self._original_url.startswith(("about:", "chrome://", "vivaldi://"))
 
     def _stop_playwright(self):
         if self._pw:
