@@ -6,6 +6,7 @@ import datetime
 
 from dotenv import load_dotenv
 from src.config import Config
+from src.logging_setup import setup_logging
 from src.receipt_downloader import ReceiptDownloader
 from src.receipt_mailer import ReceiptMailer
 from src.browser_session import BrowserSession
@@ -15,27 +16,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Download and email OpenAI receipt")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show debug output in console")
     return parser.parse_args()
-
-
-def configure_logging_and_config(verbose: bool = False) -> tuple[logging.Logger, Config]:
-    log_format = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
-
-    import sys
-    console = logging.StreamHandler(sys.stdout)
-    console.setLevel(logging.DEBUG if verbose else logging.INFO)
-
-    logfile = logging.FileHandler("openai_receipt.log")
-    logfile.setLevel(logging.DEBUG)
-
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format=log_format,
-        handlers=[console, logfile],
-    )
-    for name in ("asyncio", "playwright", "urllib3"):
-        logging.getLogger(name).setLevel(logging.WARNING)
-    load_dotenv()
-    return logging.getLogger(__name__), Config()
 
 
 def todays_receipt_filename() -> str:
@@ -56,9 +36,11 @@ def email_receipt(cfg: Config, pdf_path: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    logger, cfg = configure_logging_and_config(verbose=args.verbose)
-    with open("openai_receipt.log", "a") as f:
-        f.write("\n" + "=" * 60 + "\n\n")
+    setup_logging(verbose=args.verbose)
+    load_dotenv()
+
+    logger = logging.getLogger(__name__)
+    cfg = Config()
     pdf_path = todays_receipt_filename()
 
     download_latest_receipt(cfg, pdf_path)
