@@ -67,21 +67,13 @@ class OpenAIClient:
 
     def _download_pdf(self, output_path: str):
         """Click the download button and save the PDF to output_path."""
-        page = self._page
         download_dir = os.path.abspath(os.path.dirname(output_path) or ".")
-
-        # Tell the browser where to save downloads (required for CDP on Linux)
-        cdp_session = page.context.new_cdp_session(page)
-        cdp_session.send("Browser.setDownloadBehavior", {
-            "behavior": "allow",
-            "downloadPath": download_dir,
-        })
-        logger.info("CDP download path: %s", download_dir)
+        cdp_session = self._set_cdp_download_path(download_dir)
 
         pdfs_before = set(glob.glob(os.path.join(download_dir, "*.pdf")))
-        page.click(self.DOWNLOAD_BUTTON)
-
+        self._page.click(self.DOWNLOAD_BUTTON)
         new_pdf = self._wait_for_new_pdf(download_dir, pdfs_before)
+
         cdp_session.detach()
 
         if not new_pdf:
@@ -90,6 +82,16 @@ class OpenAIClient:
         if os.path.abspath(new_pdf) != os.path.abspath(output_path):
             os.rename(new_pdf, output_path)
         logger.info("Receipt saved to %s (%d bytes)", output_path, os.path.getsize(output_path))
+
+    def _set_cdp_download_path(self, download_dir: str):
+        """Configure the browser to save downloads to download_dir via CDP."""
+        cdp_session = self._page.context.new_cdp_session(self._page)
+        cdp_session.send("Browser.setDownloadBehavior", {
+            "behavior": "allow",
+            "downloadPath": download_dir,
+        })
+        logger.info("CDP download path: %s", download_dir)
+        return cdp_session
 
     def _login(self):
         """Assisted login: fills email/password, user handles MFA manually."""
