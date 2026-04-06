@@ -1,237 +1,140 @@
 import logging
-import re
-import time
-import random
 import os
 import glob
+import time
+import random
 
 logger = logging.getLogger(__name__)
 
+
 class OpenAIClient:
     """
-    Assists with login to ChatGPT and downloading the latest receipt PDF.
-    Fields are filled automatically; user manually clicks buttons.
-    Verbose logging throughout.
+    Handles login to ChatGPT and downloading the latest receipt PDF.
     """
-    AUTH_URL_PATTERN = "**auth.openai.com/log-in**"
     SETTINGS_URL = "https://chatgpt.com/#settings/Account"
     MANAGE_BUTTON = "button:has-text('Manage')"
-    SESSION_URL_PATTERN = re.compile(r"https://pay\.openai\.com/p/session/live")
     INVOICE_LINK_SELECTOR = "a[href^='https://invoice.stripe.com/i/']"
-    STRIPE_URL_PATTERN = "https://invoice.stripe.com**"
     DOWNLOAD_BUTTON = "text=Download receipt"
 
     def __init__(self, cfg, page):
         self.cfg = cfg
-        logger.debug("OpenAIClient initialized with cfg=%s", cfg)
-        self._pw = None
-        self._browser = None
-        self._context = None
         self._page = page
 
-    def login(self):
-        """
-        Assisted login flow:
-        1. Navigate to ChatGPT home
-        2. User clicks 'Log in' manually
-        3. Script waits for auth page
-        4. Script fills email; user clicks Continue
-        5. Script fills password; user clicks Continue
-        6. Script fills MFA code; user clicks Continue
-        """
-        if not self._page:
-            self.start()
-
-        logger.info("Starting assisted login process")
-        # Step 1: Go to home
-        self._page.goto(self.cfg.openai_home_url)
-        self._page.wait_for_load_state('networkidle')
-        logger.debug("Page loaded, waiting for 'Log in' button")
-
-        delay = random.uniform(1,5)
-        logger.debug("Sleeping %.2f seconds before going to login page", delay)
-        time.sleep(delay)
-        buttons = self._page.query_selector_all('button')
-        logger.debug("Found %d buttons on the page", len(buttons))
-        for idx, btn in enumerate(buttons):
-            try:
-                text = btn.inner_text().strip()
-            except Exception:
-                text = '<unable to retrieve text>'
-            logger.debug("Button %d: '%s'", idx, text)
-        # Click the second 'Log in' button
-        self._page.locator("button:has-text('Log in')").nth(1).click()
-        
-        # Step 2: Fill email 
-        self._page.wait_for_selector('input[type="email"]', timeout=60000)        
-        logger.debug("Automatically filling email: %s", self.cfg.openai_email)
-        self._page.fill('input[type="email"]', self.cfg.openai_email)
-        delay = random.uniform(1,5)
-        logger.debug("Sleeping %.2f seconds before email submit", delay)
-        time.sleep(delay)
-        self._page.click('button[type="submit"]')        
-
-        # Step 3: Fill password
-        self._page.wait_for_selector('input[type="password"]', timeout=60000)
-        logger.debug("Automatically filling password")
-        self._page.fill('input[type="password"]', self.cfg.openai_password)
-        delay = random.uniform(1,5)
-        logger.debug("Sleeping %.2f seconds before password submit", delay)
-        time.sleep(delay)
-        self._page.click("button:has-text('Continue')")
-
-        # Step 4: Fill MFA code
-        logger.debug("Manually filling MFA")
-        
-        # Confirm login success
-        self._page.wait_for_url(self.cfg.openai_home_url + '/*', timeout=120000)
-        logger.info("Login successful, current page: %s", self._page.url)
+    def ensure_logged_in(self):
+        if self._is_logged_in():
+            logger.info("Already logged in")
+        else:
+            logger.info("Not logged in — starting login flow")
+            self._login()
 
     def download_latest_receipt(self, output_path: str):
-        """
-        Automates downloading the latest receipt:
-        1. Navigate to Settings, user clicks 'Manage'
-        2. Wait for session URL
-        3. Click first invoice link
-        4. Wait for Stripe page, click download, save PDF
-        """
-        if not self._page:
-            raise RuntimeError("Call login() before download_latest_receipt()")
+        """Navigate to billing, open the latest invoice, and download the PDF."""
         page = self._page
-        logger.info("Starting receipt download")
-        # Settings & Manage
+
+        # Open settings and click the billing Manage button
         page.goto(self.SETTINGS_URL)
-        logger.debug("Waiting for 'Manage' button to be available: %s", self.MANAGE_BUTTON)
         page.wait_for_selector(self.MANAGE_BUTTON, timeout=60000)
 
-        # 2) Find all 'Manage' buttons and click the last one
         manage_buttons = page.locator(self.MANAGE_BUTTON)
         count = manage_buttons.count()
-        logger.info("Found %d 'Manage' button(s) on settings page", count)
-
+        logger.info("Found %d 'Manage' button(s)", count)
         if count == 0:
             raise RuntimeError("No 'Manage' buttons found on settings page")
-
-        # Heuristic: the billing/subscription manage is usually the last one
-        logger.info("Clicking last 'Manage' button (index %d)", count - 1)
         manage_buttons.nth(count - 1).click()
-        
-        # Wait for invoice links to appear
-        logger.debug("Waiting for invoice link selector: %s", self.INVOICE_LINK_SELECTOR)
+
+        # Wait for invoice links and open the first one
         page.wait_for_selector(self.INVOICE_LINK_SELECTOR, timeout=60000)
-
-
-        # Click the first Stripe invoice link
         links = page.query_selector_all(self.INVOICE_LINK_SELECTOR)
         if not links:
-            raise RuntimeError("No Stripe invoice links found on session page")
-        first_link = links[0]
-        href = first_link.get_attribute('href')
-        logger.debug("Clicking Stripe invoice link: %s", href)
+            raise RuntimeError("No Stripe invoice links found")
 
-        # Load invoice page
-        invoice_url = first_link.get_attribute("href")
-        invoice_page = page  # we’re reusing the same tab
-        invoice_page.goto(invoice_url)        
-        logger.info("Wait for invoice page to load.")
-        invoice_page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
-        logger.info("Invoice page loaded: %s", invoice_page.url)
+        invoice_url = links[0].get_attribute("href")
+        logger.info("Opening invoice: %s", invoice_url)
+        page.goto(invoice_url)
+        page.wait_for_selector(self.DOWNLOAD_BUTTON, timeout=60000)
 
-        # Step 4: Use CDP to set download behavior so the browser saves
-        # the file directly instead of leaving it in a temp cache.
-        # This is the root cause: over CDP, Chromium-based browsers
-        # download to a temp location but don't "complete" the download
-        # without explicit setDownloadBehavior.
-        download_dir = os.path.abspath(os.path.dirname(output_path) or '.')
+        # Tell the browser where to save downloads (required for CDP on Linux)
+        download_dir = os.path.abspath(os.path.dirname(output_path) or ".")
         cdp_session = page.context.new_cdp_session(page)
         cdp_session.send("Browser.setDownloadBehavior", {
             "behavior": "allow",
             "downloadPath": download_dir,
         })
-        logger.info("Set CDP download path to %s", download_dir)
+        logger.info("CDP download path: %s", download_dir)
 
+        # Click download and wait for the PDF to land on disk
         pdfs_before = set(glob.glob(os.path.join(download_dir, "*.pdf")))
+        page.click(self.DOWNLOAD_BUTTON)
 
-        logger.debug("Clicking download button: %s", self.DOWNLOAD_BUTTON)
-        invoice_page.click(self.DOWNLOAD_BUTTON)
-
-        # Wait for a new PDF to appear
-        logger.info("Waiting for PDF to download...")
-        new_pdf = None
-        for _ in range(60):
-            time.sleep(1)
-            pdfs_now = set(glob.glob(os.path.join(download_dir, "*.pdf")))
-            new_files = pdfs_now - pdfs_before
-            if new_files:
-                new_pdf = new_files.pop()
-                # Wait for file to finish writing
-                prev_size = -1
-                while True:
-                    curr_size = os.path.getsize(new_pdf)
-                    if curr_size == prev_size and curr_size > 0:
-                        break
-                    prev_size = curr_size
-                    time.sleep(0.5)
-                break
-
+        new_pdf = self._wait_for_new_pdf(download_dir, pdfs_before)
         cdp_session.detach()
 
         if not new_pdf:
             raise RuntimeError(f"No PDF appeared in {download_dir} after clicking download")
 
-        # Rename to desired output path
-        if new_pdf != output_path:
+        if os.path.abspath(new_pdf) != os.path.abspath(output_path):
             os.rename(new_pdf, output_path)
-        logger.info("Invoice saved to %s (%d bytes)", output_path, os.path.getsize(output_path))
+        logger.info("Receipt saved to %s (%d bytes)", output_path, os.path.getsize(output_path))
 
-    def is_logged_in(self) -> bool:
-        """
-        Returns True if we appear to be already logged in to ChatGPT.
-        It does this by navigating to the home URL and looking
-        for the absence of a 'Log in' button (and presence of
-        the chat sidebar).
-        """
-        # Go to the ChatGPT home page
-        self._page.goto(self.cfg.openai_home_url)
-        self._page.wait_for_load_state("networkidle")
-        logger.info("Navigated page to %s", self.cfg.openai_home_url)
+    # ── private ──────────────────────────────────────────────────
 
-        buttons = self._page.query_selector_all('button')
-        logger.debug("Found %d buttons on the page", len(buttons))
-        for idx, btn in enumerate(buttons):
-            try:
-                text = btn.inner_text().strip()
-            except Exception:
-                text = '<unable to retrieve text>'
-            logger.debug("Button %d: '%s'", idx, text)
+    def _login(self):
+        """Assisted login: fills email/password, user handles MFA manually."""
+        page = self._page
+        page.goto(self.cfg.openai_home_url)
+        page.wait_for_load_state("networkidle")
 
-        # If there's a login button visible, we're not logged in
-        login_buttons = self._page.locator("button:has-text('Log in')")
+        self._human_delay()
+        page.locator("button:has-text('Log in')").nth(1).click()
+
+        # Email
+        page.wait_for_selector('input[type="email"]', timeout=60000)
+        page.fill('input[type="email"]', self.cfg.openai_email)
+        self._human_delay()
+        page.click('button[type="submit"]')
+
+        # Password
+        page.wait_for_selector('input[type="password"]', timeout=60000)
+        page.fill('input[type="password"]', self.cfg.openai_password)
+        self._human_delay()
+        page.click("button:has-text('Continue')")
+
+        # Wait for MFA + redirect (up to 2 minutes)
+        page.wait_for_url(self.cfg.openai_home_url + "/*", timeout=120000)
+        logger.info("Login successful")
+
+    def _is_logged_in(self) -> bool:
+        page = self._page
+        page.goto(self.cfg.openai_home_url)
+        page.wait_for_load_state("networkidle")
+
+        login_buttons = page.locator("button:has-text('Log in')")
         try:
             if login_buttons.count() > 0:
-                logger.debug("Detected 'Log in' button – not logged in yet")
                 return False
         except Exception:
-            # any error finding the button, assume not logged in
             return False
-
-        # Otherwise, check for something only visible when logged in,
-        sidebar = self._page.locator("button:has-text('sidebar')")
-        if sidebar.count() > 0:
-            logger.debug("Detected buttons – already logged in")
-            return True
-
-        # Fallback: → treat as logged in
         return True
 
-    def ensure_logged_in(self):
-        """
-        Wrapper that only runs login() if we’re not already authenticated.
-        """
-       
-        if self.is_logged_in():
-            logger.info("Already logged in; skipping login()")
-        else:
-            logger.info("Not logged in; invoking login()")
-            self.login()
-            
+    @staticmethod
+    def _wait_for_new_pdf(directory, existing, timeout=60):
+        """Poll for a new PDF file in *directory* that wasn't in *existing*."""
+        for _ in range(timeout):
+            time.sleep(1)
+            current = set(glob.glob(os.path.join(directory, "*.pdf")))
+            new_files = current - existing
+            if new_files:
+                path = new_files.pop()
+                # Wait for the file to finish writing
+                prev_size = -1
+                while True:
+                    size = os.path.getsize(path)
+                    if size == prev_size and size > 0:
+                        return path
+                    prev_size = size
+                    time.sleep(0.5)
+        return None
+
+    @staticmethod
+    def _human_delay():
+        time.sleep(random.uniform(1, 3))
